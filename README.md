@@ -8,7 +8,7 @@
 </p>
 
 > **Steuere Claude Code von überall per Telegram.**  
-> Dieser Bot ermöglicht es dir, die Claude Code CLI fernzusteuern – von unterwegs, vom Sofa oder cualquier Ort.
+> Dieser Bot ermöglicht es dir, die Claude Code CLI fernzusteuern – von unterwegs, vom Sofa oder jedem beliebigen Ort.
 
 ---
 
