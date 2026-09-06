@@ -127,18 +127,18 @@ Nexus-Link/
 
 - **User-Authentifizierung**: Nur definierte User-IDs haben Zugriff
 - **Tool-Freigabe**: Kritische Tools erfordern explizite Bestätigung
-- **Environment隔离**: API-Keys werden nur in `.env` gespeichert (nie in Git!)
+- **Environment-Trennung**: API-Keys werden nur in `.env` gespeichert (nie in Git!)
 
 ---
 
 ## 📄 Lizenz
 
-> **Copyright (c) 2025 Fudasys**
+> **Copyright (c) 2026 Fudasys**
 >
 > Dieses Projekt ist **proprietär** und nicht für kommerzielle Nutzung freigegeben.
-> Jede Verwendung, Modifikation oder Verbreitung erfordert die schriftliche Genehmigung von Fudasys.
+> Jede Abwandlung oder Forks müssen den Creator **Fudasys** mit Link zu [github.com/HAX73w0rlD](https://github.com/HAX73w0rlD) nennen.
 >
-> Bei Fragen: Erstelle ein Issue oder kontaktiere den Maintainer.
+> Bei Fragen: Erstelle ein Issue.
 
 ---
 
