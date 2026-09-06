@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 data/*.json
 !.env.example
+.bot.pid
+bot.log
