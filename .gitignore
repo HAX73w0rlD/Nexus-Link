@@ -6,3 +6,4 @@ data/*.json
 !.env.example
 .bot.pid
 bot.log
+data/*.json
