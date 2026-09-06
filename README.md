@@ -2,13 +2,15 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/License-Private-red.svg" alt="License">
+  <img src="https://img.shields.io/badge/License-Proprietary-red.svg" alt="License">
   <img src="https://img.shields.io/badge/Telegram-Bot-green.svg" alt="Telegram">
   <img src="https://img.shields.io/badge/Claude-Code-purple.svg" alt="Claude">
 </p>
 
-> **Steuere Claude Code von überall per Telegram.**  
+> **Steuere Claude Code von überall per Telegram.**
 > Dieser Bot ermöglicht es dir, die Claude Code CLI fernzusteuern – von unterwegs, vom Sofa oder jedem beliebigen Ort.
+
+📄 English version: [README.en.md](./README.en.md)
 
 ---
 
@@ -63,7 +65,7 @@ Bearbeite `.env`:
 TELEGRAM_TOKEN=your_bot_token_from_botfather
 ALLOWED_USER_ID=your_telegram_user_id
 
-# Provider (optional)
+# Provider (Pflicht)
 PROVIDER=my-provider
 BASE_URL=https://api.anthropic.com
 API_KEY=sk-ant-your-key
