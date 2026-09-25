@@ -4,13 +4,18 @@ Lädt config.yaml und stellt die Provider-Definitionen bereit.
 Jede Sektion (außer "provider") wird als eigener Provider registriert.
 Modelle werden dynamisch vom konfigurierten Gateway/Provider abgerufen.
 """
-import os
+from __future__ import annotations
+
 import json
-import httpx
-import asyncio
 import logging
+import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import httpx
+
+if TYPE_CHECKING:
+    from models import ModelInfo
 
 try:
     import yaml
@@ -75,7 +80,7 @@ class ProviderConfig:
             raw_models = [("auto", "🌐 Auto")] if not force_refresh else []
 
         # Filter & Formatierung über ModelInfo
-        from models import load_model_statuses, ModelInfo
+        from models import ModelInfo, load_model_statuses
         statuses = load_model_statuses()
         filtered = []
 
@@ -99,7 +104,7 @@ class ProviderConfig:
 
     def get_model_info(self, model_id: str) -> 'ModelInfo':
         """Gibt ein ModelInfo-Objekt für eine bestimmte Modell-ID zurück."""
-        from models import load_model_statuses, ModelInfo
+        from models import ModelInfo, load_model_statuses
         statuses = load_model_statuses()
         status_entry = statuses.get(model_id, {})
 

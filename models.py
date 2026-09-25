@@ -5,10 +5,8 @@ Steuerungs- bzw. Ansprechmethode (Claude Code CLI vs Open Code / Direct API)
 und Status-Management (funktionsfähig, defekt, ausgeblendet).
 """
 
-import re
 import json
 import logging
-from typing import Dict, List, Optional, Set, Tuple
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -60,14 +58,14 @@ class ModelInfo:
     def __init__(
         self,
         model_id: str,
-        label: Optional[str] = None,
-        categories: Optional[List[str]] = None,
-        invocation_type: Optional[str] = None,
+        label: str | None = None,
+        categories: list[str] | None = None,
+        invocation_type: str | None = None,
         provider_name: str = "",
         description: str = "",
         status: str = "unknown",  # "working", "non_working", "unknown", "hidden"
-        error_message: Optional[str] = None,
-        last_checked: Optional[str] = None,
+        error_message: str | None = None,
+        last_checked: str | None = None,
     ):
         self.id = model_id
         self.label = label or model_id
@@ -122,7 +120,7 @@ class ModelInfo:
 
 # --- Heuristiken für automatische Erkennung ---
 
-def detect_categories(model_id: str, label: Optional[str] = None) -> List[str]:
+def detect_categories(model_id: str, label: str | None = None) -> list[str]:
     """Erkennt Fähigkeiten/Kategorien anhand von Modell-ID und Name."""
     text_lower = f"{model_id} {label or ''}".lower()
     categories = set()
@@ -183,7 +181,7 @@ def detect_invocation_type(model_id: str) -> str:
 
 # --- Persistentes Status-Management ---
 
-def load_model_statuses() -> Dict[str, dict]:
+def load_model_statuses() -> dict[str, dict]:
     """Lädt gespeicherte Modell-Statusdaten (funktionsfähig / defekt / hidden)."""
     if not MODEL_STATUS_FILE.exists():
         return {}
@@ -195,7 +193,7 @@ def load_model_statuses() -> Dict[str, dict]:
         return {}
 
 
-def save_model_statuses(statuses: Dict[str, dict]):
+def save_model_statuses(statuses: dict[str, dict]):
     """Speichert Modell-Statusdaten."""
     try:
         MODEL_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -208,7 +206,7 @@ def save_model_statuses(statuses: Dict[str, dict]):
 def update_model_status(
     model_id: str,
     status: str,
-    error_message: Optional[str] = None,
+    error_message: str | None = None,
     hide_if_failed: bool = False
 ):
     """Aktualisiert den Status eines einzelnen Modells."""
@@ -231,7 +229,7 @@ def update_model_status(
     save_model_statuses(statuses)
 
 
-def hide_non_working_models(model_ids: List[str]) -> int:
+def hide_non_working_models(model_ids: list[str]) -> int:
     """Setzt alle als 'non_working' erkannten Modelle auf 'hidden'.
 
     Gibt die Anzahl der ausgeblendeten Modelle zurück.

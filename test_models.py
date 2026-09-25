@@ -1,23 +1,20 @@
 """Unit tests for models management, categorization, health checks, and providers."""
 
-import os
-import json
 import unittest
-from unittest.mock import patch, MagicMock, AsyncMock
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from model_checker import check_single_model_health
 from models import (
     ModelInfo,
     detect_categories,
     detect_invocation_type,
-    update_model_status,
-    load_model_statuses,
     hide_non_working_models,
+    load_model_statuses,
     unhide_all_models,
-    MODEL_STATUS_FILE,
+    update_model_status,
 )
 from providers import ProviderConfig
-from model_checker import check_single_model_health, verify_all_models_health
 
 
 class TestModelsCategorization(unittest.TestCase):

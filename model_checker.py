@@ -1,10 +1,11 @@
 """Health verification and model status management for Nexus-Link."""
 
-import logging
 import asyncio
+import logging
+
 import httpx
-from typing import Dict, List, Tuple, Optional
-from models import update_model_status, load_model_statuses, hide_non_working_models
+
+from models import hide_non_working_models, update_model_status
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ async def check_single_model_health(
     api_key: str,
     model_id: str,
     timeout: float = 6.0
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Prüft ob ein Modell über die API erreichbar und nutzbar ist.
 
     Sendet einen minimalistischen Request (z.B. max_tokens=1) an /chat/completions.
@@ -58,9 +59,9 @@ async def check_single_model_health(
 
 async def verify_all_models_health(
     provider_config,
-    model_ids: List[str],
+    model_ids: list[str],
     auto_hide: bool = False
-) -> Dict[str, dict]:
+) -> dict[str, dict]:
     """Prüft die Funktionsfähigkeit aller übergebenen Modelle parallel.
 
     Gibt ein Dictionary mit den Testergebnissen pro Modell zurück.

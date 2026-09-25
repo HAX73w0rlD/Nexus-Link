@@ -4,14 +4,9 @@ Speichert UserState, Session-IDs, Conversation-History und Job-Logs
 in JSON-Dateien unter ./data/. Überlebt Neustarts des Bots.
 """
 import json
-import os
 import logging
-from pathlib import Path
 from datetime import datetime
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from bot import UserState, Job
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
