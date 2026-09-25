@@ -1367,38 +1367,62 @@ async def cmd_provider(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def render_models_keyboard(user_id: int, selected_category: str = "all") -> tuple[str, InlineKeyboardMarkup]:
+    """Baut die strukturierte, kategorisierte Modellliste mit Kontroll-Buttons auf."""
+    from models import CATEGORY_EMOJIS, CATEGORY_NAMES
+    state = get_user_state(user_id)
+    lang = state.language
+    models = CURRENT_PROVIDER.get_model_list(category=selected_category)
+
+    text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n"
+    text += f"Aktuell: <b>{state.model}</b>\n"
+
+    cat_label = CATEGORY_NAMES.get(lang, CATEGORY_NAMES["de"]).get(selected_category, selected_category)
+    text += f"Kategorie: <b>{cat_label}</b> ({len(models)} Modelle)\n\n"
+
+    keyboard = []
+
+    # 1. Kategorie-Filter-Buttons
+    cat_buttons = []
+    categories = [("all", "🌐"), ("text", "💬"), ("code", "💻"), ("image", "🎨"), ("video", "🎬")]
+    for cat_id, emoji in categories:
+        active = "🔹" if cat_id == selected_category else ""
+        cat_buttons.append(InlineKeyboardButton(f"{active}{emoji}", callback_data=f"modcat:{cat_id}"))
+    keyboard.append(cat_buttons)
+
+    # 2. Modelle als Buttons
+    for i in range(0, len(models), 2):
+        row = []
+        for model_id, label in models[i:i+2]:
+            info = CURRENT_PROVIDER.get_model_info(model_id)
+            prefix = "✅ " if model_id == state.model else ""
+            cat_emojis = info.get_category_emojis()
+            inv_emoji = info.get_invocation_emoji()
+            btn_label = f"{prefix}{inv_emoji} {label} {cat_emojis}".strip()
+            # Telegram-Buttonbeschränkung (max 64 Byte callback_data)
+            row.append(InlineKeyboardButton(btn_label[:35], callback_data=f"model:{model_id}"))
+        keyboard.append(row)
+
+    # 3. Aktion-Buttons (Defekte ausblenden, Neu laden, Alle einblenden)
+    keyboard.append([
+        InlineKeyboardButton(_("models_check_health", lang), callback_data="models:check_health"),
+        InlineKeyboardButton("🔄 Refresh", callback_data="models:refresh"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton(_("models_unhide_all", lang), callback_data="models:unhide_all")
+    ])
+
+    return text, InlineKeyboardMarkup(keyboard)
+
 async def cmd_modelliste(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Zeigt die verfügbare Modelliste des aktuellen Providers an."""
+    """Zeigt die verfügbare Modellliste des aktuellen Providers an."""
     if update.effective_user.id != ALLOWED_USER_ID:
         return
 
     try:
-        state = get_user_state(update.effective_user.id)
-        models = CURRENT_PROVIDER.get_model_list()
-
-        if not models:
-            await update.message.reply_text(
-                "⚠️ <b>Keine Modelle gefunden</b>\n\n"
-                f"Provider: <code>{PROVIDER_NAME}</code>\n"
-                "Die API hat keine Modelle zurückgegeben.\n"
-                "Verwende <code>/models refresh</code> um es erneut zu versuchen.",
-                parse_mode=ParseMode.HTML
-            )
-            return
-
-        text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n\nAktuell: <b>{state.model}</b>\nWähle ein Modell:"
-
-        keyboard = []
-        for i in range(0, len(models), 2):
-            row = []
-            for model_id, label in models[i:i+2]:
-                prefix = "✅ " if model_id == state.model else ""
-                row.append(InlineKeyboardButton(f"{prefix}{label}", callback_data=f"model:{model_id}"))
-            keyboard.append(row)
-
-        keyboard.append([InlineKeyboardButton("🔄 Modelle neu laden", callback_data="models:refresh")])
-
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+        user_id = update.effective_user.id
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
 
     except Exception as e:
         logger.exception(f"Fehler in cmd_modelliste: {e}")
@@ -1851,41 +1875,56 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("ℹ️ Kein aktiver Job", show_alert=True)
     elif action == "models" and value == "refresh":
-        # Modelle neu laden - Cache löschen und neue Liste senden
         from providers import save_cached_models
         try:
             save_cached_models(CURRENT_PROVIDER.name, [])
-            state = get_user_state(user_id)
-            state.model = CURRENT_PROVIDER.model
-            save_user_state(user_id, state)
         except Exception:
             pass
-
-        # Neue Liste abrufen
-        models = CURRENT_PROVIDER.get_model_list()
-
-        if models:
-            text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n\nAktuell: <b>{state.model}</b>\nWähle ein Modell:"
-            keyboard = []
-            for i in range(0, len(models), 2):
-                row = []
-                for model_id, label in models[i:i+2]:
-                    prefix = "✅ " if model_id == state.model else ""
-                    row.append(InlineKeyboardButton(f"{prefix}{label}", callback_data=f"model:{model_id}"))
-                keyboard.append(row)
-            keyboard.append([InlineKeyboardButton("🔄 Modelle neu laden", callback_data="models:refresh")])
-        else:
-            text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n\n⚠️ Keine Modelle vom Provider erhalten."
-            keyboard = [[InlineKeyboardButton("🔄 Erneut versuchen", callback_data="models:refresh")]]
-
-        # Nachricht senden (nicht editieren, um "not modified" Fehler zu vermeiden)
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML, reply_markup=markup)
         await query.answer("🔄 Modelle neu geladen")
+    elif action == "models" and value == "check_health":
+        state = get_user_state(user_id)
+        lang = state.language
+        await query.answer(_("models_checking_health", lang))
+
+        from model_checker import verify_all_models_health
+        all_models = CURRENT_PROVIDER.get_model_list(force_refresh=True, include_hidden=True)
+        model_ids = [m[0] for m in all_models]
+
+        results = await verify_all_models_health(CURRENT_PROVIDER, model_ids, auto_hide=True)
+        hidden_count = sum(1 for r in results.values() if r.get("status") == "hidden")
+
+        msg_text = _("models_health_done", lang, hidden_count=hidden_count)
+        await context.bot.send_message(chat_id=user_id, text=msg_text, parse_mode=ParseMode.HTML)
+
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            pass
+    elif action == "models" and value == "unhide_all":
+        state = get_user_state(user_id)
+        lang = state.language
+        from models import unhide_all_models
+        unhide_all_models()
+        await query.answer(_("models_unhide_done", lang))
+
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            pass
+    elif data.startswith("modcat:"):
+        selected_cat = data.split(":", 1)[1]
+        text, markup = await render_models_keyboard(user_id, selected_category=selected_cat)
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            pass
     elif action == "new":
         state = get_user_state(user_id)
         if job:
