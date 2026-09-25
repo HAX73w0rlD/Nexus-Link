@@ -4,13 +4,18 @@ Lädt config.yaml und stellt die Provider-Definitionen bereit.
 Jede Sektion (außer "provider") wird als eigener Provider registriert.
 Modelle werden dynamisch vom konfigurierten Gateway/Provider abgerufen.
 """
-import os
+from __future__ import annotations
+
 import json
-import httpx
-import asyncio
 import logging
+import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import httpx
+
+if TYPE_CHECKING:
+    from models import ModelInfo
 
 try:
     import yaml
@@ -44,7 +49,7 @@ class ProviderConfig:
     def __repr__(self):
         return f"ProviderConfig(name={self.name!r}, model={self.model!r}, base_url={self.base_url!r})"
 
-    def get_model_list(self, force_refresh: bool = False) -> list[tuple[str, str]]:
+    def get_model_list(self, force_refresh: bool = False, include_hidden: bool = False, category: str = "all") -> list[tuple[str, str]]:
         """Gibt die Liste der verfügbaren Modelle zurück.
 
         Reihenfolge:
@@ -52,26 +57,69 @@ class ProviderConfig:
         2. Gecachte Models (von früherem API-Abruf)
         3. API-Abruf (dynamisch)
         4. Fallback auf ["auto", "Auto"]
+
+        Filtert ausgeblendete (hidden) Modelle, es sei denn include_hidden=True.
+        Filtert nach Kategorie wenn category != "all".
         """
+        raw_models = []
         # 1. Explizit konfigurierte Models
         if self.models:
-            return self.models
+            raw_models = self.models
+        elif not force_refresh:
+            # 2. Cache prüfen
+            raw_models = load_cached_models(self.name)
 
-        # 2. Cache prüfen (wenn nicht force_refresh)
-        if not force_refresh:
-            cached = load_cached_models(self.name)
-            if cached:
-                return cached
+        if not raw_models:
+            # 3. API-Abruf
+            raw_models = self.fetch_models()
+            if raw_models:
+                save_cached_models(self.name, raw_models)
 
-        # 3. API-Abruf
-        models = self.fetch_models()
-        if models:
-            # Cache speichern
-            save_cached_models(self.name, models)
-            return models
+        if not raw_models:
+            # 4. Fallback
+            raw_models = [("auto", "🌐 Auto")] if not force_refresh else []
 
-        # 4. Fallback
-        return [("auto", "🌐 Auto")] if not force_refresh else []
+        # Filter & Formatierung über ModelInfo
+        from models import ModelInfo, load_model_statuses
+        statuses = load_model_statuses()
+        filtered = []
+
+        for mid, label in raw_models:
+            status_entry = statuses.get(mid, {})
+            status = status_entry.get("status", "unknown")
+
+            # Ausgeblendete Modelle ausfiltern
+            if not include_hidden and status == "hidden":
+                continue
+
+            info = ModelInfo(mid, label=label, provider_name=self.name, status=status)
+
+            # Nach Kategorie filtern
+            if category != "all" and category not in info.categories:
+                continue
+
+            filtered.append((mid, label))
+
+        return filtered
+
+    def get_model_info(self, model_id: str) -> 'ModelInfo':
+        """Gibt ein ModelInfo-Objekt für eine bestimmte Modell-ID zurück."""
+        from models import ModelInfo, load_model_statuses
+        statuses = load_model_statuses()
+        status_entry = statuses.get(model_id, {})
+
+        # Label suchen
+        models = self.get_model_list(include_hidden=True)
+        label = next((lbl for mid, lbl in models if mid == model_id), model_id)
+
+        return ModelInfo(
+            model_id=model_id,
+            label=label,
+            provider_name=self.name,
+            status=status_entry.get("status", "unknown"),
+            error_message=status_entry.get("error_message"),
+            last_checked=status_entry.get("last_checked")
+        )
 
     def fetch_models(self) -> list[tuple[str, str]]:
         """Versucht Modelle vom API-Endpoint abzurufen ( /models oder /model ).

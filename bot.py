@@ -1,26 +1,44 @@
+import asyncio
+import html
+import html as html_module
+import json
+import logging
 import os
 import re
-import asyncio
-import json
-import uuid
-import logging
+import re as re_module
 import time
-from datetime import datetime, timedelta
+import uuid
 from pathlib import Path
+
 from dotenv import load_dotenv
-from memory import init_memory, save_user_state, load_user_state, save_session, load_session, delete_session, add_history_entry, load_history, clear_history, save_job_log, load_job_log, list_job_logs, build_context_from_history
-from i18n import t as _, get_lang, LANG_NAMES
-from providers import load_config, get_model_list
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     MessageHandler,
-    CommandHandler,
-    CallbackQueryHandler,
     filters,
 )
+
+from i18n import LANG_NAMES
+from i18n import t as _
+from memory import (
+    add_history_entry,
+    build_context_from_history,
+    clear_history,
+    delete_session,
+    init_memory,
+    list_job_logs,
+    load_history,
+    load_session,
+    load_user_state,
+    save_job_log,
+    save_session,
+    save_user_state,
+)
+from providers import load_config
 
 # Logging
 logging.basicConfig(
@@ -494,7 +512,7 @@ async def update_telegram_message(job: Job, update: Update, context: ContextType
         elapsed_str = format_duration(elapsed)
 
         if job.status == "starting":
-            text = f"🔄 *Job wird gestartet...*"
+            text = "🔄 *Job wird gestartet...*"
         elif job.status == "running":
             status = "🟢 läuft"
             if job.pending_permission:
@@ -516,15 +534,15 @@ async def update_telegram_message(job: Job, update: Update, context: ContextType
                         first_word = str(cmd).split()[0] if cmd else ""
                         if first_word:
                             tool_pattern = f"{tool_name}({first_word} *)"
-                text += f"\n\n🔐 *TOOL-PERMISSION ERFORDERLICH*\n"
+                text += "\n\n🔐 *TOOL-PERMISSION ERFORDERLICH*\n"
                 text += f"→ Tool: `{tool_name}`\n"
                 text += f"→ Pattern: `{tool_pattern}`\n"
                 if tool_input:
                     input_str = str(tool_input)[:200]
                     text += f"→ Input: `{input_str}`\n"
-                text += f"\n*Freigabe-Befehl:*\n"
+                text += "\n*Freigabe-Befehl:*\n"
                 text += f"`/tools allow {tool_pattern}`\n"
-                text += f"\n*Oder wähle unten eine Option:*\n"
+                text += "\n*Oder wähle unten eine Option:*\n"
 
             # Live-Text anzeigen (MarkdownV2-konvertiert)
             if job.full_text:
@@ -697,9 +715,6 @@ def format_duration(seconds: int) -> str:
     return f"{h}h {m}m"
 
 # --- Markdown-zu-MarkdownV2 Konverter ---
-import html as html_module
-import re as re_module
-
 ALLOWED_HTML_TAGS = {"b", "i", "code", "pre", "a", "u", "s", "tg-spoiler"}
 
 # MarkdownV2-Sonderzeichen, die escaped werden müssen
@@ -900,8 +915,6 @@ def has_markdown(text: str) -> bool:
 
 
 # --- Copy-Buttons ---
-import html
-
 def extract_copy_buttons(text: str) -> list:
     """Extrahiert Copy-Buttons für Dateinamen, Pfade und Code-Snippets."""
     buttons = []
@@ -1093,11 +1106,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state.session_id:
         text += f"<b>Session-ID:</b> <code>{state.session_id[:8]}...</code>\n"
     if state.worktree:
-        text += f"<b>Worktree:</b> aktiv\n"
+        text += "<b>Worktree:</b> aktiv\n"
 
     if job:
         elapsed = int(time.time() - job.started_at)
-        text += f"\n<b>Aktiver Job:</b>\n"
+        text += "\n<b>Aktiver Job:</b>\n"
         text += f"• Status: {job.status}\n"
         text += f"• ID: <code>{job.id or '...'}</code>\n"
         text += f"• Laufzeit: {format_duration(elapsed)}\n"
@@ -1367,38 +1380,62 @@ async def cmd_provider(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def render_models_keyboard(user_id: int, selected_category: str = "all") -> tuple[str, InlineKeyboardMarkup]:
+    """Baut die strukturierte, kategorisierte Modellliste mit Kontroll-Buttons auf."""
+    from models import CATEGORY_NAMES
+    state = get_user_state(user_id)
+    lang = state.language
+    models = CURRENT_PROVIDER.get_model_list(category=selected_category)
+
+    text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n"
+    text += f"Aktuell: <b>{state.model}</b>\n"
+
+    cat_label = CATEGORY_NAMES.get(lang, CATEGORY_NAMES["de"]).get(selected_category, selected_category)
+    text += f"Kategorie: <b>{cat_label}</b> ({len(models)} Modelle)\n\n"
+
+    keyboard = []
+
+    # 1. Kategorie-Filter-Buttons
+    cat_buttons = []
+    categories = [("all", "🌐"), ("text", "💬"), ("code", "💻"), ("image", "🎨"), ("video", "🎬")]
+    for cat_id, emoji in categories:
+        active = "🔹" if cat_id == selected_category else ""
+        cat_buttons.append(InlineKeyboardButton(f"{active}{emoji}", callback_data=f"modcat:{cat_id}"))
+    keyboard.append(cat_buttons)
+
+    # 2. Modelle als Buttons
+    for i in range(0, len(models), 2):
+        row = []
+        for model_id, label in models[i:i+2]:
+            info = CURRENT_PROVIDER.get_model_info(model_id)
+            prefix = "✅ " if model_id == state.model else ""
+            cat_emojis = info.get_category_emojis()
+            inv_emoji = info.get_invocation_emoji()
+            btn_label = f"{prefix}{inv_emoji} {label} {cat_emojis}".strip()
+            # Telegram-Buttonbeschränkung (max 64 Byte callback_data)
+            row.append(InlineKeyboardButton(btn_label[:35], callback_data=f"model:{model_id}"))
+        keyboard.append(row)
+
+    # 3. Aktion-Buttons (Defekte ausblenden, Neu laden, Alle einblenden)
+    keyboard.append([
+        InlineKeyboardButton(_("models_check_health", lang), callback_data="models:check_health"),
+        InlineKeyboardButton("🔄 Refresh", callback_data="models:refresh"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton(_("models_unhide_all", lang), callback_data="models:unhide_all")
+    ])
+
+    return text, InlineKeyboardMarkup(keyboard)
+
 async def cmd_modelliste(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Zeigt die verfügbare Modelliste des aktuellen Providers an."""
+    """Zeigt die verfügbare Modellliste des aktuellen Providers an."""
     if update.effective_user.id != ALLOWED_USER_ID:
         return
 
     try:
-        state = get_user_state(update.effective_user.id)
-        models = CURRENT_PROVIDER.get_model_list()
-
-        if not models:
-            await update.message.reply_text(
-                "⚠️ <b>Keine Modelle gefunden</b>\n\n"
-                f"Provider: <code>{PROVIDER_NAME}</code>\n"
-                "Die API hat keine Modelle zurückgegeben.\n"
-                "Verwende <code>/models refresh</code> um es erneut zu versuchen.",
-                parse_mode=ParseMode.HTML
-            )
-            return
-
-        text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n\nAktuell: <b>{state.model}</b>\nWähle ein Modell:"
-
-        keyboard = []
-        for i in range(0, len(models), 2):
-            row = []
-            for model_id, label in models[i:i+2]:
-                prefix = "✅ " if model_id == state.model else ""
-                row.append(InlineKeyboardButton(f"{prefix}{label}", callback_data=f"model:{model_id}"))
-            keyboard.append(row)
-
-        keyboard.append([InlineKeyboardButton("🔄 Modelle neu laden", callback_data="models:refresh")])
-
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+        user_id = update.effective_user.id
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
 
     except Exception as e:
         logger.exception(f"Fehler in cmd_modelliste: {e}")
@@ -1488,9 +1525,9 @@ async def cmd_permissions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += "  <i>(keine)</i>\n"
 
     text += f"\n<b>Tools-Set:</b> <code>{state.tools}</code>\n"
-    text += f"\n<i>Defaults zurücksetzen mit</i> <code>/permissions reset</code>\n"
-    text += f"<i>Erlauben: <code>/tools allow Bash(git *)</code></i>\n"
-    text += f"<i>Verbieten: <code>/tools deny Bash(rm *)</code></i>"
+    text += "\n<i>Defaults zurücksetzen mit</i> <code>/permissions reset</code>\n"
+    text += "<i>Erlauben: <code>/tools allow Bash(git *)</code></i>\n"
+    text += "<i>Verbieten: <code>/tools deny Bash(rm *)</code></i>"
 
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -1666,7 +1703,7 @@ async def cmd_grep(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         for i, line in enumerate(content.splitlines(), 1):
                             if pattern.lower() in line.lower():
                                 matches.append(f"{fpath}:{i}: {line.rstrip()}")
-                    except:
+                    except Exception:
                         pass
         if not matches:
             await update.message.reply_text(f"🔍 Keine Treffer für <code>{html.escape(pattern)}</code>", parse_mode=ParseMode.HTML)
@@ -1851,41 +1888,56 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("ℹ️ Kein aktiver Job", show_alert=True)
     elif action == "models" and value == "refresh":
-        # Modelle neu laden - Cache löschen und neue Liste senden
         from providers import save_cached_models
         try:
             save_cached_models(CURRENT_PROVIDER.name, [])
-            state = get_user_state(user_id)
-            state.model = CURRENT_PROVIDER.model
-            save_user_state(user_id, state)
         except Exception:
             pass
-
-        # Neue Liste abrufen
-        models = CURRENT_PROVIDER.get_model_list()
-
-        if models:
-            text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n\nAktuell: <b>{state.model}</b>\nWähle ein Modell:"
-            keyboard = []
-            for i in range(0, len(models), 2):
-                row = []
-                for model_id, label in models[i:i+2]:
-                    prefix = "✅ " if model_id == state.model else ""
-                    row.append(InlineKeyboardButton(f"{prefix}{label}", callback_data=f"model:{model_id}"))
-                keyboard.append(row)
-            keyboard.append([InlineKeyboardButton("🔄 Modelle neu laden", callback_data="models:refresh")])
-        else:
-            text = f"<b>📋 Modelle</b> (Provider: <code>{PROVIDER_NAME}</code>)\n\n⚠️ Keine Modelle vom Provider erhalten."
-            keyboard = [[InlineKeyboardButton("🔄 Erneut versuchen", callback_data="models:refresh")]]
-
-        # Nachricht senden (nicht editieren, um "not modified" Fehler zu vermeiden)
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML, reply_markup=markup)
         await query.answer("🔄 Modelle neu geladen")
+    elif action == "models" and value == "check_health":
+        state = get_user_state(user_id)
+        lang = state.language
+        await query.answer(_("models_checking_health", lang))
+
+        from model_checker import verify_all_models_health
+        all_models = CURRENT_PROVIDER.get_model_list(force_refresh=True, include_hidden=True)
+        model_ids = [m[0] for m in all_models]
+
+        results = await verify_all_models_health(CURRENT_PROVIDER, model_ids, auto_hide=True)
+        hidden_count = sum(1 for r in results.values() if r.get("status") == "hidden")
+
+        msg_text = _("models_health_done", lang, hidden_count=hidden_count)
+        await context.bot.send_message(chat_id=user_id, text=msg_text, parse_mode=ParseMode.HTML)
+
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            pass
+    elif action == "models" and value == "unhide_all":
+        state = get_user_state(user_id)
+        lang = state.language
+        from models import unhide_all_models
+        unhide_all_models()
+        await query.answer(_("models_unhide_done", lang))
+
+        text, markup = await render_models_keyboard(user_id, selected_category="all")
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            pass
+    elif data.startswith("modcat:"):
+        selected_cat = data.split(":", 1)[1]
+        text, markup = await render_models_keyboard(user_id, selected_category=selected_cat)
+        try:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        except Exception:
+            pass
     elif action == "new":
         state = get_user_state(user_id)
         if job:
